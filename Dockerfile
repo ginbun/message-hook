@@ -14,6 +14,11 @@ RUN cargo build --release
 # Runtime: minimal libc/C++ runtime + CA bundle; :nonroot runs as uid/gid 65532
 FROM gcr.io/distroless/cc-debian13:nonroot
 
+WORKDIR /app
+
+# App loads File::with_name("config") from cwd → needs config.toml here (env APP__* overrides)
+COPY --from=builder /app/config.toml /app/config.toml
+
 COPY --from=builder /app/target/release/messages-hook /usr/local/bin/messages-hook
 
 EXPOSE 8080
