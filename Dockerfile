@@ -1,30 +1,21 @@
-# Build stage
-FROM rust:1-slim-bookworm AS builder
+# Build on Debian trixie (glibc aligns with distroless cc-debian13)
+FROM rust:1-trixie AS builder
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy source code
 COPY . .
 
-# Build for release
 RUN cargo build --release
 
-# Runtime stage
-FROM debian:bookworm-slim
+# Runtime: minimal libc/C++ runtime + CA bundle; :nonroot runs as uid/gid 65532
+FROM gcr.io/distroless/cc-debian13:nonroot
 
-WORKDIR /app
-
-# Install runtime dependencies (ca-certificates for HTTPS)
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-
-# Copy the binary from builder
 COPY --from=builder /app/target/release/messages-hook /usr/local/bin/messages-hook
 
-# Expose the port
 EXPOSE 8080
 
-# Run the binary
-CMD ["messages-hook"]
+ENTRYPOINT ["/usr/local/bin/messages-hook"]
