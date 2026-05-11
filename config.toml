@@ -1,0 +1,23 @@
+[server]
+addr = "0.0.0.0:8080"
+
+[auth]
+argocd_token = "argocd_token"
+cloudflare_secret = "cloudflare_secret"
+alertmanager_token = "notification"
+
+[targets.matrix]
+enabled = false
+homeserver = "https://chat.jolo.games"
+token = "YOUR_MATRIX_TOKEN"
+room_id = "!roomid:matrix.org"
+
+[targets.telegram]
+enabled = false
+token = "YOUR_BOT_TOKEN"
+chat_id = "YOUR_CHAT_ID"
+
+[routes]
+argocd = ["matrix"]
+cloudflare = ["matrix", "telegram"]
+alertmanager = ["matrix"]

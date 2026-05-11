@@ -1,0 +1,14 @@
+services:
+  messages-hook:
+    build: .
+    container_name: messages-hook
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+    environment:
+      - RUST_LOG=info
+      # Example overrides:
+      # - APP__TARGETS__MATRIX__TOKEN=${MATRIX_TOKEN}
+      # - APP__TARGETS__TELEGRAM__TOKEN=${TELEGRAM_TOKEN}
+    restart: unless-stopped
