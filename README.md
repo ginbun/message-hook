@@ -31,7 +31,7 @@ token = "..."
 
 [[routes]]
 sources = ["argocd.prod", "argocd.staging"]
-destinations = ["matrix.composite"]
+destinations = ["matrix.my_room"]
 ```
 
 Authentication per source (omit token/secret field to disable):
