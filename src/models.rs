@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Notification {
-    pub title: String,
     pub body: String,
 }
 
@@ -49,40 +48,37 @@ pub struct Alert {
 
 impl From<ArgoCDPayload> for Notification {
     fn from(payload: ArgoCDPayload) -> Self {
-        let title = format!(
-            "ArgoCD: {}",
-            payload.app_name.unwrap_or_else(|| "Unknown App".to_string())
-        );
         let body = format!(
-            "Status: {}\nMessage: {}",
+            "App: {}\nStatus: {}\nMessage: {}",
+            payload.app_name.unwrap_or_else(|| "Unknown App".to_string()),
             payload.status.unwrap_or_else(|| "N/A".to_string()),
             payload.message.unwrap_or_else(|| "No message provided".to_string())
         );
-        Notification { title, body }
+        Notification { body }
     }
 }
 
 impl From<CloudflarePayload> for Notification {
     fn from(payload: CloudflarePayload) -> Self {
-        let title = format!(
-            "Cloudflare Alert: {}",
-            payload.policy_name.as_deref().unwrap_or("Unknown Policy")
-        );
         let body = format!(
-            "Type: {}\nEvent: {}\n\n{}",
+            "Policy: {}\nType: {}\nEvent: {}\n\n{}",
+            payload.policy_name.as_deref().unwrap_or("Unknown Policy"),
             payload.alert_type.as_deref().unwrap_or("N/A"),
             payload.alert_event.as_deref().unwrap_or("N/A"),
             payload.text.as_deref().unwrap_or(""),
         );
-        Notification { title, body }
+        Notification { body }
     }
 }
 
 impl From<AlertmanagerPayload> for Notification {
     fn from(payload: AlertmanagerPayload) -> Self {
-        let title = format!("Alertmanager: {} ({})", payload.status.to_uppercase(), payload.alerts.len());
-        let mut body = String::new();
-        
+        let mut body = format!(
+            "Status: {} ({} alerts)\n",
+            payload.status.to_uppercase(),
+            payload.alerts.len()
+        );
+
         for alert in payload.alerts.iter().take(5) {
             let summary = alert.annotations.get("summary")
                 .and_then(|v| v.as_str())
@@ -97,7 +93,7 @@ impl From<AlertmanagerPayload> for Notification {
         if payload.alerts.len() > 5 {
             body.push_str("... and more alerts");
         }
-        
-        Notification { title, body }
+
+        Notification { body }
     }
 }

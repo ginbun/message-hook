@@ -1,7 +1,8 @@
 services:
   messages-hook:
-    build: .
+    image: ghcr.io/ginbun/message-hook:${MESSAGE_HOOK_TAG:-latest}
     container_name: messages-hook
+    pull_policy: always
     ports:
       - "8080:8080"
     volumes:

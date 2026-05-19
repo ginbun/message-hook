@@ -1,60 +1,37 @@
-use axum::{
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-    Json,
-};
-use crate::config::AppState;
+use axum::{extract::State, Json, response::IntoResponse, http::{HeaderMap, StatusCode}};
 use crate::models::{AlertmanagerPayload, Notification};
 use crate::services;
+use crate::config::AppState;
 use std::sync::Arc;
 use tracing::{info, warn};
 
 pub async fn handle(
     State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
     headers: HeaderMap,
     Json(payload): Json<AlertmanagerPayload>,
 ) -> impl IntoResponse {
-    let source_id = crate::config::AppConfig::source_id("alertmanager", &name);
-    let Some(source) = state.config.sources.alertmanager.get(&name) else {
-        warn!("Alertmanager source '{}' is not configured", name);
-        return StatusCode::NOT_FOUND.into_response();
-    };
-
-    if let Some(ref expected) = source.token {
-        let token_str: Option<&str> = headers
-            .get("X-Token")
+    if let Some(ref expected_token) = state.config.auth.alertmanager_token {
+        let token_str: Option<&str> = headers.get("X-Token")
             .and_then(|h| h.to_str().ok())
             .or_else(|| {
-                headers
-                    .get("Authorization")
+                headers.get("Authorization")
                     .and_then(|h| h.to_str().ok())
                     .and_then(|s| s.strip_prefix("Bearer "))
                     .map(str::trim)
             });
 
-        if token_str != Some(expected.as_str()) {
-            warn!("Unauthorized Alertmanager webhook for source '{}'", name);
+        if token_str != Some(expected_token) {
+            warn!("Unauthorized Alertmanager webhook attempt");
             return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
         }
     }
 
-    info!(
-        "Received Alertmanager webhook ({}): status={}",
-        source_id, payload.status
-    );
+    info!("Received Alertmanager webhook: status={}", payload.status);
 
     let notification: Notification = payload.into();
-    let destinations = state.config.destinations_for(&source_id);
-    if !destinations.is_empty() {
-        services::dispatch(
-            &state.http_client,
-            &state.config.targets,
-            &destinations,
-            notification,
-        )
-        .await;
+
+    if let Some(route) = state.config.routes.get("alertmanager") {
+        services::dispatch(&state.http_client, &state.config.targets, route, notification).await;
     }
 
     StatusCode::OK.into_response()

@@ -9,19 +9,13 @@ use tracing::warn;
 pub async fn dispatch(
     client: &Client,
     targets: &TargetsConfig,
-    destinations: &[String],
+    route: &[String],
     notification: Notification,
 ) {
-    for dest in destinations {
-        // Expected format: "<type>.<name>", e.g. "matrix.main" or "telegram.alerts"
-        let Some((kind, name)) = dest.split_once('.') else {
-            warn!("Invalid destination '{}': expected '<type>.<name>'", dest);
-            continue;
-        };
-
-        match kind {
+    for target_name in route {
+        match target_name.as_str() {
             "matrix" => {
-                if let Some(config) = targets.matrix.get(name) {
+                if let Some(ref config) = targets.matrix {
                     let config = config.clone();
                     let notification = notification.clone();
                     let client = client.clone();
@@ -29,11 +23,11 @@ pub async fn dispatch(
                         matrix::send(&client, &config, &notification).await;
                     });
                 } else {
-                    warn!("Matrix bot '{}' requested but not configured", name);
+                    warn!("Matrix target requested but not configured");
                 }
             }
             "telegram" => {
-                if let Some(config) = targets.telegram.get(name) {
+                if let Some(ref config) = targets.telegram {
                     let config = config.clone();
                     let notification = notification.clone();
                     let client = client.clone();
@@ -41,10 +35,10 @@ pub async fn dispatch(
                         telegram::send(&client, &config, &notification).await;
                     });
                 } else {
-                    warn!("Telegram bot '{}' requested but not configured", name);
+                    warn!("Telegram target requested but not configured");
                 }
             }
-            _ => warn!("Unknown destination type '{}' in '{}'", kind, dest),
+            _ => warn!("Unknown target: {}", target_name),
         }
     }
 }
