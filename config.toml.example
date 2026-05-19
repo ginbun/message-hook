@@ -1,0 +1,59 @@
+[server]
+addr = "0.0.0.0:8080"
+
+# Named webhook sources (same pattern as targets).
+# Use source id "<type>.<name>" in routes, e.g. argocd.prod, cloudflare.main.
+[sources.argocd.default]
+token = "use rand long string"
+
+# [sources.argocd.staging]
+# token = "another-argocd-token"
+
+[sources.cloudflare.default]
+secret = "like: head -c 32 /dev/urandom | xxd -p"
+
+[sources.alertmanager.default]
+token = "or openssl rand -hex 32"
+
+# Each Matrix bot has a unique name (e.g. "main", "ops").
+# room_ids is a list — the bot will send to every room in the list.
+[targets.matrix.default]
+enabled = true
+homeserver = "https://matrix.org"
+token = "matrix_token"
+room_ids = ["!room_id"]
+
+# Example of a second Matrix bot on a different homeserver / different rooms
+# [targets.matrix.ops]
+# enabled = false
+# homeserver = "https://matrix.example.com"
+# token = "ANOTHER_MATRIX_TOKEN"
+# room_ids = ["!room1:example.com", "!room2:example.com"]
+
+# Each Telegram bot has a unique name (e.g. "alerts", "ops").
+# chat_ids is a list — the bot will send to every chat in the list.
+[targets.telegram.alerts]
+enabled = false
+token = "YOUR_BOT_TOKEN"
+chat_ids = ["YOUR_CHAT_ID"]
+
+# Many-to-many routing.
+# sources: "<type>.<name>" — must match a configured [sources.*] entry
+# destinations: "<type>.<name>" — must match a configured [targets.*] entry
+[[routes]]
+sources = ["argocd.default"]
+destinations = ["matrix.default"]
+[[routes]]
+sources = ["cloudflare.default"]
+destinations = ["matrix.default_opera"]
+
+
+# Multiple sources of the same type in one rule:
+# [[routes]]
+# sources = ["argocd.prod", "argocd.staging"]
+# destinations = ["matrix.default", "telegram.alerts"]
+
+# Different routes per instance:
+# [[routes]]
+# sources = ["argocd.staging"]
+# destinations = ["matrix.ops"]

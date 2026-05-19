@@ -26,9 +26,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
-        .route("/webhook/argocd", post(handlers::argocd::handle))
-        .route("/webhook/cloudflare", post(handlers::cloudflare::handle))
-        .route("/webhook/alertmanager", post(handlers::alertmanager::handle))
+        .route("/webhook/argocd/{name}", post(handlers::argocd::handle))
+        .route("/webhook/cloudflare/{name}", post(handlers::cloudflare::handle))
+        .route("/webhook/alertmanager/{name}", post(handlers::alertmanager::handle))
         // 限制请求体最大 1 MiB，防止超大 payload 耗尽内存
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .with_state(shared_state);
