@@ -45,7 +45,7 @@ sources = ["argocd.default"]
 destinations = ["matrix.default"]
 [[routes]]
 sources = ["cloudflare.default"]
-destinations = ["matrix.default_opera"]
+destinations = ["matrix.default"]
 
 
 # Multiple sources of the same type in one rule:

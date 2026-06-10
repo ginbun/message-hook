@@ -17,24 +17,33 @@ pub async fn send(client: &Client, config: &TelegramConfig, notification: &Notif
 
     let url = format!("https://api.telegram.org/bot{}/sendMessage", config.token);
 
-    let text = html_escape(&notification.body);
+    let text = format!(
+        "<b>{}</b>\n\n{}",
+        html_escape(&notification.title),
+        html_escape(&notification.body),
+    );
 
-    let body = json!({
-        "chat_id": config.chat_id,
-        "text": text,
-        "parse_mode": "HTML"
-    });
+    for chat_id in &config.chat_ids {
+        let body = json!({
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML"
+        });
 
-    match client.post(&url).json(&body).send().await {
-        Ok(resp) => {
-            if resp.status().is_success() {
-                info!("Successfully sent message to Telegram");
-            } else {
-                let status = resp.status();
-                let text = resp.text().await.unwrap_or_default();
-                error!("Failed to send message to Telegram: {} - {}", status, text);
+        match client.post(&url).json(&body).send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    info!("Successfully sent message to Telegram chat {}", chat_id);
+                } else {
+                    let status = resp.status();
+                    let text = resp.text().await.unwrap_or_default();
+                    error!(
+                        "Failed to send message to Telegram chat {}: {} - {}",
+                        chat_id, status, text
+                    );
+                }
             }
+            Err(e) => error!("Network error sending to Telegram chat {}: {}", chat_id, e),
         }
-        Err(e) => error!("Network error sending to Telegram: {}", e),
     }
 }

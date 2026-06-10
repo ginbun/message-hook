@@ -9,13 +9,19 @@ use tracing::warn;
 pub async fn dispatch(
     client: &Client,
     targets: &TargetsConfig,
-    route: &[String],
+    destinations: &[String],
     notification: Notification,
 ) {
-    for target_name in route {
-        match target_name.as_str() {
+    for dest in destinations {
+        // Expected format: "<type>.<name>", e.g. "matrix.main" or "telegram.alerts"
+        let Some((kind, name)) = dest.split_once('.') else {
+            warn!("Invalid destination '{}': expected '<type>.<name>'", dest);
+            continue;
+        };
+
+        match kind {
             "matrix" => {
-                if let Some(ref config) = targets.matrix {
+                if let Some(config) = targets.matrix.get(name) {
                     let config = config.clone();
                     let notification = notification.clone();
                     let client = client.clone();
@@ -23,11 +29,11 @@ pub async fn dispatch(
                         matrix::send(&client, &config, &notification).await;
                     });
                 } else {
-                    warn!("Matrix target requested but not configured");
+                    warn!("Matrix bot '{}' requested but not configured", name);
                 }
             }
             "telegram" => {
-                if let Some(ref config) = targets.telegram {
+                if let Some(config) = targets.telegram.get(name) {
                     let config = config.clone();
                     let notification = notification.clone();
                     let client = client.clone();
@@ -35,10 +41,10 @@ pub async fn dispatch(
                         telegram::send(&client, &config, &notification).await;
                     });
                 } else {
-                    warn!("Telegram target requested but not configured");
+                    warn!("Telegram bot '{}' requested but not configured", name);
                 }
             }
-            _ => warn!("Unknown target: {}", target_name),
+            _ => warn!("Unknown destination type '{}' in '{}'", kind, dest),
         }
     }
 }

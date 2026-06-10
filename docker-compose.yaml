@@ -9,7 +9,7 @@ services:
       - ./config.toml:/app/config.toml:ro
     environment:
       - RUST_LOG=info
-      # Example overrides:
-      # - APP__TARGETS__MATRIX__TOKEN=${MATRIX_TOKEN}
-      # - APP__TARGETS__TELEGRAM__TOKEN=${TELEGRAM_TOKEN}
+      # Example overrides (named instance keys):
+      # - APP__TARGETS__MATRIX__DEFAULT__TOKEN=${MATRIX_TOKEN}
+      # - APP__TARGETS__TELEGRAM__ALERTS__TOKEN=${TELEGRAM_TOKEN}
     restart: unless-stopped

@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8.9"
-config = { version = "0.15.22", features = ["toml"] }
 reqwest = { version = "0.13.3", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
@@ -13,3 +12,4 @@ tokio = { version = "1.52.1", features = ["full"] }
 tower-http = { version = "0.6.8", features = ["limit"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
+toml = "1.1.2"
