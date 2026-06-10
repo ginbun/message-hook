@@ -36,8 +36,8 @@ pub async fn handle(
     }
 
     info!(
-        "Received ArgoCD webhook ({}): {:?}",
-        source_id, payload.app_name
+        "Received ArgoCD webhook ({}): app={:?} event={:?}",
+        source_id, payload.app_name, payload.event
     );
 
     let notification: Notification = payload.into();
