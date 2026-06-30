@@ -1,0 +1,45 @@
+version: 2
+
+updates:
+  # Rust dependencies (Cargo.lock)
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "cargo"
+      include: "scope"
+    groups:
+      # Patch/minor updates within the same minor are bundled into one PR
+      # to avoid a flood of tiny PRs.
+      tracing:
+        patterns:
+          - "tracing"
+          - "tracing-subscriber"
+      serde:
+        patterns:
+          - "serde"
+          - "serde_json"
+      axum:
+        patterns:
+          - "axum"
+          - "tower-http"
+
+  # GitHub Actions used in workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

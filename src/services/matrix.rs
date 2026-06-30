@@ -27,10 +27,25 @@ pub async fn send(client: &Client, config: &MatrixConfig, notification: &Notific
         return;
     }
 
-    let plain_body = format!("**{}**\n\n{}", notification.title, notification.body);
+    // `body` is the plain-text fallback per the Matrix spec — no markdown,
+    // since not all clients render markdown in `body`.
+    let plain_body = format!("{}\n\n{}", notification.title, notification.body);
     let html_title = html_escape(&notification.title);
-    let html_body = html_escape(&notification.body).replace('\n', "<br>");
-    let formatted_body = format!("<h3>{}</h3><p>{}</p>", html_title, html_body);
+
+    let formatted_body = if notification.fields.is_empty() {
+        let html_body = html_escape(&notification.body).replace('\n', "<br>");
+        format!("<h3>{}</h3><p>{}</p>", html_title, html_body)
+    } else {
+        let mut rows = String::new();
+        for (k, v) in &notification.fields {
+            rows.push_str(&format!(
+                "<tr><th>{}</th><td>{}</td></tr>",
+                html_escape(k),
+                html_escape(v).replace('\n', "<br>"),
+            ));
+        }
+        format!("<h3>{}</h3><table>{}</table>", html_title, rows)
+    };
 
     let body = json!({
         "msgtype": "m.text",
