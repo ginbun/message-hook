@@ -36,15 +36,21 @@ pub async fn send(client: &Client, config: &MatrixConfig, notification: &Notific
         let html_body = html_escape(&notification.body).replace('\n', "<br>");
         format!("<h3>{}</h3><p>{}</p>", html_title, html_body)
     } else {
-        let mut rows = String::new();
-        for (k, v) in &notification.fields {
-            rows.push_str(&format!(
-                "<tr><th>{}</th><td>{}</td></tr>",
+        // Render as `Key: value` lines rather than an HTML <table>: several
+        // clients (e.g. Fractal) don't render tables and would collapse the
+        // rows into a single line with no labels.
+        let mut lines = String::new();
+        for (i, (k, v)) in notification.fields.iter().enumerate() {
+            if i > 0 {
+                lines.push_str("<br>");
+            }
+            lines.push_str(&format!(
+                "<b>{}</b>: {}",
                 html_escape(k),
                 html_escape(v).replace('\n', "<br>"),
             ));
         }
-        format!("<h3>{}</h3><table>{}</table>", html_title, rows)
+        format!("<h3>{}</h3><p>{}</p>", html_title, lines)
     };
 
     let body = json!({

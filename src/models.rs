@@ -93,11 +93,16 @@ impl From<ArgoCDPayload> for Notification {
                 payload.region.as_deref(),
                 payload.area.as_deref(),
             );
-            match (payload.event.as_deref(), head.is_empty()) {
-                (Some(event), false) => format!("{head} — {event}"),
-                (Some(event), true) => event.to_string(),
-                (None, false) => head,
-                (None, true) => format!("ArgoCD: {app}"),
+            // Always surface the app name so it's clear at a glance which app
+            // the event is about.
+            let prefix = if head.is_empty() {
+                app.clone()
+            } else {
+                format!("{head} {app}")
+            };
+            match payload.event.as_deref() {
+                Some(event) => format!("{prefix} — {event}"),
+                None => prefix,
             }
         } else {
             format!("ArgoCD: {app}")
@@ -208,7 +213,7 @@ mod tests {
         .unwrap();
 
         let n: Notification = payload.into();
-        assert_eq!(n.title, "TEST (india) — sync-succeeded");
+        assert_eq!(n.title, "TEST (india) composite-admin-test — sync-succeeded");
         assert!(n.body.contains("Event: sync-succeeded"));
         assert!(n.body.contains("Health: Healthy"));
         assert!(n.body.contains("Revision: a1b2c3d4e5f6789012345678901234567890abcd"));
@@ -232,7 +237,10 @@ mod tests {
         .unwrap();
 
         let n: Notification = payload.into();
-        assert_eq!(n.title, "PROD (us-east4, North America) — sync-failed");
+        assert_eq!(
+            n.title,
+            "PROD (us-east4, North America) composite-admin-prod — sync-failed"
+        );
         assert!(n.body.contains("Operation: Failed"));
         assert!(n.fields.iter().any(|(k, v)| k == "Area" && v == "North America"));
     }
