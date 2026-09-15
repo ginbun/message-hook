@@ -22,36 +22,52 @@ fn encode_room_id(room_id: &str) -> String {
         .collect()
 }
 
+/// Matrix `org.matrix.custom.html` payload.
+///
+/// Many clients (Fractal, nheko, older Element) skip markdown in `body` and
+/// also mishandle headings/tables. Stick to the widely-supported subset:
+/// `strong`, `b`, `i`, `code`, `br`.
+fn format_html(notification: &Notification) -> String {
+    let title = format!("<strong>{}</strong>", html_escape(&notification.title));
+
+    if notification.fields.is_empty() {
+        let body = html_escape(&notification.body).replace('\n', "<br>");
+        if body.is_empty() {
+            return title;
+        }
+        return format!("{title}<br><br>{body}");
+    }
+
+    let mut html = title;
+    html.push_str("<br><br>");
+    for (i, (k, v)) in notification.fields.iter().enumerate() {
+        if i > 0 {
+            html.push_str("<br>");
+        }
+        html.push_str(&format_field_html(k, v));
+    }
+    html
+}
+
+fn format_field_html(key: &str, value: &str) -> String {
+    let k = html_escape(key);
+    let v = html_escape(value).replace('\n', "<br>");
+    match key {
+        "Note" => format!("<b>{k}</b>: <i>{v}</i>"),
+        "Error" => format!("<b>{k}</b>: {v}"),
+        _ => format!("<b>{k}</b>: <code>{v}</code>"),
+    }
+}
+
 pub async fn send(client: &Client, config: &MatrixConfig, notification: &Notification) {
     if !config.enabled {
         return;
     }
 
-    // `body` is the plain-text fallback per the Matrix spec — no markdown,
-    // since not all clients render markdown in `body`.
+    // Plain `body` is the fallback when a client ignores `formatted_body`.
+    // Keep it text-only — no markdown markers.
     let plain_body = format!("{}\n\n{}", notification.title, notification.body);
-    let html_title = html_escape(&notification.title);
-
-    let formatted_body = if notification.fields.is_empty() {
-        let html_body = html_escape(&notification.body).replace('\n', "<br>");
-        format!("<h3>{}</h3><p>{}</p>", html_title, html_body)
-    } else {
-        // Render as `Key: value` lines rather than an HTML <table>: several
-        // clients (e.g. Fractal) don't render tables and would collapse the
-        // rows into a single line with no labels.
-        let mut lines = String::new();
-        for (i, (k, v)) in notification.fields.iter().enumerate() {
-            if i > 0 {
-                lines.push_str("<br>");
-            }
-            lines.push_str(&format!(
-                "<b>{}</b>: {}",
-                html_escape(k),
-                html_escape(v).replace('\n', "<br>"),
-            ));
-        }
-        format!("<h3>{}</h3><p>{}</p>", html_title, lines)
-    };
+    let formatted_body = format_html(notification);
 
     let body = json!({
         "msgtype": "m.text",
@@ -90,5 +106,76 @@ pub async fn send(client: &Client, config: &MatrixConfig, notification: &Notific
             }
             Err(e) => error!("Network error sending to Matrix room {}: {}", room_id, e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn notification(title: &str, body: &str, fields: Vec<(&str, &str)>) -> Notification {
+        Notification {
+            title: title.into(),
+            body: body.into(),
+            fields: fields
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn html_uses_safe_tags_for_fields() {
+        let n = notification(
+            "[PROD] payments · 🔄 Sync Succeeded",
+            "App: payments\nRevision: abc123",
+            vec![
+                ("App", "payments"),
+                ("Revision", "abc123"),
+                ("Health Status", "Healthy"),
+                (
+                    "Note",
+                    "Sync succeeded means manifest apply succeeded. App health may still be Progressing.",
+                ),
+            ],
+        );
+
+        let html = format_html(&n);
+        assert_eq!(
+            html,
+            "<strong>[PROD] payments · 🔄 Sync Succeeded</strong><br><br>\
+             <b>App</b>: <code>payments</code><br>\
+             <b>Revision</b>: <code>abc123</code><br>\
+             <b>Health Status</b>: <code>Healthy</code><br>\
+             <b>Note</b>: <i>Sync succeeded means manifest apply succeeded. App health may still be Progressing.</i>"
+        );
+        assert!(!html.contains("<h3>"));
+        assert!(!html.contains("<table"));
+        assert!(!html.contains('*'));
+    }
+
+    #[test]
+    fn html_escapes_user_content() {
+        let n = notification("app <b>", "unused", vec![("Error", "failed: a < b & c")]);
+
+        let html = format_html(&n);
+        assert_eq!(
+            html,
+            "<strong>app &lt;b&gt;</strong><br><br><b>Error</b>: failed: a &lt; b &amp; c"
+        );
+        assert!(!html.contains("app <b>"));
+    }
+
+    #[test]
+    fn html_falls_back_to_plain_body() {
+        let n = notification(
+            "ArgoCD: my-app",
+            "Status: Synced\nMessage: all good",
+            vec![],
+        );
+        assert_eq!(
+            format_html(&n),
+            "<strong>ArgoCD: my-app</strong><br><br>Status: Synced<br>Message: all good"
+        );
     }
 }

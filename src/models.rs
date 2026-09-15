@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 pub struct Notification {
     pub title: String,
     pub body: String,
-    /// Structured key/value pairs rendered as an HTML table by targets that
-    /// support rich formatting (e.g. Matrix). Plain-text targets ignore this
-    /// and fall back to `body`.
+    /// Structured key/value pairs. Matrix renders these as HTML
+    /// (`org.matrix.custom.html`); Telegram uses HTML parse_mode.
+    /// Plain-text `body` is the fallback when a client ignores markup.
     #[serde(default)]
     pub fields: Vec<(String, String)>,
 }
@@ -37,6 +37,8 @@ pub struct ArgoCDPayload {
     pub namespace: Option<String>,
     #[serde(rename = "syncMode")]
     pub sync_mode: Option<String>,
+    /// Custom webhook: product line, e.g. composite, composite-us, fantasy.
+    pub stack: Option<String>,
 }
 
 impl ArgoCDPayload {
@@ -88,21 +90,19 @@ impl From<ArgoCDPayload> for Notification {
         let app = payload.app_display().to_string();
 
         let title = if payload.is_custom_format() {
-            let head = build_argocd_title_head(
+            let tag = build_argocd_tag(
+                payload.stack.as_deref(),
                 payload.environment.as_deref(),
                 payload.region.as_deref(),
                 payload.area.as_deref(),
             );
-            // Always surface the app name so it's clear at a glance which app
-            // the event is about.
-            let prefix = if head.is_empty() {
-                app.clone()
-            } else {
-                format!("{head} {app}")
-            };
-            match payload.event.as_deref() {
-                Some(event) => format!("{prefix} — {event}"),
-                None => prefix,
+            let event_str = format_argocd_event(payload.event.as_deref());
+
+            match (tag.is_empty(), event_str.is_empty()) {
+                (false, false) => format!("{tag} {app} · {event_str}"),
+                (false, true) => format!("{tag} {app}"),
+                (true, false) => format!("{app} · {event_str}"),
+                (true, true) => app.clone(),
             }
         } else {
             format!("ArgoCD: {app}")
@@ -110,41 +110,38 @@ impl From<ArgoCDPayload> for Notification {
 
         let (body, fields) = if payload.is_custom_format() {
             let mut fields: Vec<(String, String)> = Vec::new();
-            if let Some(v) = payload.environment.as_deref() {
-                fields.push(("Environment".into(), v.into()));
-            }
-            if let Some(v) = payload.region.as_deref() {
-                fields.push(("Region".into(), v.into()));
-            }
-            if let Some(v) = payload.area.as_deref() {
-                fields.push(("Area".into(), v.into()));
-            }
-            if let Some(v) = payload.event.as_deref() {
-                fields.push(("Event".into(), v.into()));
-            }
-            if !app.is_empty() {
-                fields.push(("App".into(), app.clone()));
+            fields.push(("App".into(), app.clone()));
+            if let Some(v) = payload.project.as_deref() {
+                fields.push(("Project".into(), v.into()));
             }
             if let Some(v) = payload.revision.as_deref() {
                 fields.push(("Revision".into(), v.into()));
             }
             if let Some(v) = payload.health_status.as_deref() {
-                fields.push(("Health".into(), v.into()));
+                fields.push(("Health Status".into(), v.into()));
             }
             if let Some(v) = payload.operation_phase.as_deref() {
                 fields.push(("Operation".into(), v.into()));
             }
-            if let Some(v) = payload.project.as_deref() {
-                fields.push(("Project".into(), v.into()));
-            }
             if let Some(v) = payload.namespace.as_deref() {
                 fields.push(("Namespace".into(), v.into()));
             }
-            if let Some(v) = payload.sync_mode.as_deref() {
-                fields.push(("Sync Mode".into(), v.into()));
-            }
-            if let Some(v) = payload.message.as_deref() {
-                fields.push(("Message".into(), v.into()));
+            if let Some(v) = payload
+                .message
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                let label = if payload
+                    .event
+                    .as_deref()
+                    .is_some_and(|e| e.contains("degraded"))
+                {
+                    "Message"
+                } else {
+                    "Error"
+                };
+                fields.push((label.into(), v.into()));
             }
 
             let body = if fields.is_empty() {
@@ -166,28 +163,64 @@ impl From<ArgoCDPayload> for Notification {
             (body, Vec::new())
         };
 
-        Notification { title, body, fields }
+        Notification {
+            title,
+            body,
+            fields,
+        }
     }
 }
 
-/// Build the leading `ENV (region[, area])` portion of an ArgoCD title.
-fn build_argocd_title_head(env: Option<&str>, region: Option<&str>, area: Option<&str>) -> String {
-    let mut head = String::new();
-    if let Some(e) = env {
-        head.push_str(e);
+/// Builds leading tag e.g. `[PROD]`, `[TEST (india)]`, or `[composite-us PROD (us-east4)]`.
+fn build_argocd_tag(
+    stack: Option<&str>,
+    env: Option<&str>,
+    region: Option<&str>,
+    area: Option<&str>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(s) = stack.filter(|s| !s.is_empty() && *s != "composite") {
+        parts.push(s.to_string());
     }
-    if let Some(r) = region {
-        let loc = match area {
+    if let Some(e) = env.filter(|e| !e.is_empty()) {
+        parts.push(e.to_string());
+    }
+    if let Some(r) = region.filter(|r| !r.is_empty()) {
+        let loc = match area.filter(|a| !a.is_empty()) {
             Some(a) => format!("{r}, {a}"),
             None => r.to_string(),
         };
-        if head.is_empty() {
-            head.push_str(&format!("({loc})"));
-        } else {
-            head.push_str(&format!(" ({loc})"));
-        }
+        parts.push(format!("({loc})"));
     }
-    head
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("[{}]", parts.join(" "))
+    }
+}
+
+fn format_argocd_event(event: Option<&str>) -> String {
+    match event {
+        Some(e) if e.contains("degraded") => "❌ Health Degraded".to_string(),
+        Some(e) if e.contains("succeed") => "✅ Sync Succeeded".to_string(),
+        Some(e) if e.contains("fail") || e.contains("error") => "❌ Sync Failed".to_string(),
+        Some(e) => {
+            let label = e
+                .split(['-', '_'])
+                .filter(|part| !part.is_empty())
+                .map(|part| {
+                    let mut chars = part.chars();
+                    match chars.next() {
+                        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                        None => String::new(),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!("🔔 {label}")
+        }
+        None => String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -198,6 +231,7 @@ mod tests {
     fn argocd_custom_sync_succeeded() {
         let payload: ArgoCDPayload = serde_json::from_str(
             r#"{
+              "stack": "composite",
               "environment": "TEST",
               "region": "india",
               "event": "sync-succeeded",
@@ -213,25 +247,62 @@ mod tests {
         .unwrap();
 
         let n: Notification = payload.into();
-        assert_eq!(n.title, "TEST (india) composite-admin-test — sync-succeeded");
-        assert!(n.body.contains("Event: sync-succeeded"));
-        assert!(n.body.contains("Health: Healthy"));
-        assert!(n.body.contains("Revision: a1b2c3d4e5f6789012345678901234567890abcd"));
+        assert_eq!(
+            n.title,
+            "[TEST (india)] composite-admin-test · ✅ Sync Succeeded"
+        );
+        assert!(n.body.contains("App: composite-admin-test"));
+        assert!(
+            n.body
+                .contains("Revision: a1b2c3d4e5f6789012345678901234567890abcd")
+        );
+        assert!(n.body.contains("Health Status: Healthy"));
         assert!(n.body.contains("Namespace: composite-test"));
-        assert!(n.fields.iter().any(|(k, v)| k == "Region" && v == "india"));
+        assert!(!n.body.contains("Note:"));
+    }
+
+    #[test]
+    fn argocd_custom_health_degraded() {
+        let payload: ArgoCDPayload = serde_json::from_str(
+            r#"{
+              "stack": "composite",
+              "environment": "PROD",
+              "region": "us-east4",
+              "event": "health-degraded",
+              "app": "payments",
+              "revision": "a1b2c3d4e5f6789012345678901234567890abcd",
+              "healthStatus": "Degraded",
+              "message": "Deployment/payments has not matched the expected replica count"
+            }"#,
+        )
+        .unwrap();
+
+        let n: Notification = payload.into();
+        assert_eq!(n.title, "[PROD (us-east4)] payments · ❌ Health Degraded");
+        assert!(n.body.contains("App: payments"));
+        assert!(n.body.contains("Health Status: Degraded"));
+        assert!(
+            n.body.contains(
+                "Message: Deployment/payments has not matched the expected replica count"
+            )
+        );
+        assert!(!n.body.contains("Error:"));
+        assert!(!n.body.contains("Note:"));
     }
 
     #[test]
     fn argocd_custom_sync_failed() {
         let payload: ArgoCDPayload = serde_json::from_str(
             r#"{
+              "stack": "composite-us",
               "environment": "PROD",
               "region": "us-east4",
               "area": "North America",
               "event": "sync-failed",
               "app": "composite-admin-prod",
               "healthStatus": "Degraded",
-              "operationPhase": "Failed"
+              "operationPhase": "Failed",
+              "message": "one or more synchronization tasks completed unsuccessfully"
             }"#,
         )
         .unwrap();
@@ -239,18 +310,26 @@ mod tests {
         let n: Notification = payload.into();
         assert_eq!(
             n.title,
-            "PROD (us-east4, North America) composite-admin-prod — sync-failed"
+            "[composite-us PROD (us-east4, North America)] composite-admin-prod · ❌ Sync Failed"
         );
+        assert!(n.body.contains("App: composite-admin-prod"));
         assert!(n.body.contains("Operation: Failed"));
-        assert!(n.fields.iter().any(|(k, v)| k == "Area" && v == "North America"));
+        assert!(
+            n.body
+                .contains("Error: one or more synchronization tasks completed unsuccessfully")
+        );
+        assert!(
+            n.fields
+                .iter()
+                .any(|(k, v)| k == "Health Status" && v == "Degraded")
+        );
     }
 
     #[test]
     fn argocd_legacy_format() {
-        let payload: ArgoCDPayload = serde_json::from_str(
-            r#"{"app_name":"my-app","status":"Synced","message":"all good"}"#,
-        )
-        .unwrap();
+        let payload: ArgoCDPayload =
+            serde_json::from_str(r#"{"app_name":"my-app","status":"Synced","message":"all good"}"#)
+                .unwrap();
 
         let n: Notification = payload.into();
         assert_eq!(n.title, "ArgoCD: my-app");
@@ -271,30 +350,46 @@ impl From<CloudflarePayload> for Notification {
             payload.alert_event.as_deref().unwrap_or("N/A"),
             payload.text.as_deref().unwrap_or(""),
         );
-        Notification { title, body, fields: Vec::new() }
+        Notification {
+            title,
+            body,
+            fields: Vec::new(),
+        }
     }
 }
 
 impl From<AlertmanagerPayload> for Notification {
     fn from(payload: AlertmanagerPayload) -> Self {
-        let title = format!("Alertmanager: {} ({})", payload.status.to_uppercase(), payload.alerts.len());
+        let title = format!(
+            "Alertmanager: {} ({})",
+            payload.status.to_uppercase(),
+            payload.alerts.len()
+        );
         let mut body = String::new();
-        
+
         for alert in payload.alerts.iter().take(5) {
-            let summary = alert.annotations.get("summary")
+            let summary = alert
+                .annotations
+                .get("summary")
                 .and_then(|v| v.as_str())
                 .unwrap_or("No summary");
-            let instance = alert.labels.get("instance")
+            let instance = alert
+                .labels
+                .get("instance")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            
+
             body.push_str(&format!("- [{}] {}: {}\n", alert.status, instance, summary));
         }
-        
+
         if payload.alerts.len() > 5 {
             body.push_str("... and more alerts");
         }
-        
-        Notification { title, body, fields: Vec::new() }
+
+        Notification {
+            title,
+            body,
+            fields: Vec::new(),
+        }
     }
 }

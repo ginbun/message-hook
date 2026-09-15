@@ -17,11 +17,21 @@ pub async fn send(client: &Client, config: &TelegramConfig, notification: &Notif
 
     let url = format!("https://api.telegram.org/bot{}/sendMessage", config.token);
 
-    let text = format!(
-        "<b>{}</b>\n\n{}",
-        html_escape(&notification.title),
-        html_escape(&notification.body),
-    );
+    let text = if notification.fields.is_empty() {
+        format!(
+            "<b>{}</b>\n\n{}",
+            html_escape(&notification.title),
+            html_escape(&notification.body),
+        )
+    } else {
+        let lines = notification
+            .fields
+            .iter()
+            .map(|(k, v)| format!("<b>{}</b>: {}", html_escape(k), html_escape(v)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("<b>{}</b>\n\n{}", html_escape(&notification.title), lines)
+    };
 
     for chat_id in &config.chat_ids {
         let body = json!({
